@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   LineChart,
@@ -12,6 +12,9 @@ import {
   ReferenceLine,
 } from "recharts";
 import TrackMap from "@/app/components/TrackMap";
+import { getDriverColor as getDriverColorBySeason } from "@/lib/driver-colors";
+import { motion, AnimatePresence } from "framer-motion";
+import { AnimatedCard } from "@/components/AnimatedCard";
 
 interface TelemetryData {
   id: number;
@@ -46,38 +49,14 @@ interface DriverOption {
   position: number | null;
 }
 
-// F1 team colors (approximate)
-const DRIVER_COLORS: Record<string, string> = {
-  VER: "#3671C6", // Red Bull
-  PER: "#3671C6",
-  HAM: "#6CD3BF", // Mercedes
-  RUS: "#6CD3BF",
-  LEC: "#F91536", // Ferrari
-  SAI: "#F91536",
-  NOR: "#F58020", // McLaren
-  PIA: "#F58020",
-  ALO: "#229971", // Aston Martin
-  STR: "#229971",
-  GAS: "#5E8FAA", // Alpine
-  OCO: "#5E8FAA",
-  TSU: "#6692FF", // RB
-  RIC: "#6692FF",
-  BOT: "#C92D4B", // Sauber
-  ZHO: "#C92D4B",
-  MAG: "#B6BABD", // Haas
-  HUL: "#B6BABD",
-  ALB: "#64C4FF", // Williams
-  SAR: "#64C4FF",
-  // Default
-  DEFAULT: "#e10600",
-};
-
-function getDriverColor(code: string): string {
-  return DRIVER_COLORS[code] || DRIVER_COLORS.DEFAULT;
+// Get driver color based on season (will be determined from session data)
+function getDriverColor(code: string, season?: number): string {
+  // Use the session's season if available, otherwise default to 2024
+  return getDriverColorBySeason(code, season || 2024);
 }
 
-export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function SessionPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [selectedDrivers, setSelectedDrivers] = useState<(number | string)[]>([]);
@@ -212,7 +191,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           <div className="flex flex-wrap gap-2">
             {drivers.map((d) => {
               const isSelected = selectedDrivers.map(String).includes(String(d.driver_id));
-              const color = getDriverColor(d.driver_code);
+              const color = getDriverColor(d.driver_code, session?.season);
               return (
                 <button
                   key={d.driver_id}
@@ -299,7 +278,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                       <ReferenceLine x={hoveredDistance} stroke="#e10600" strokeDasharray="3 3" />
                     )}
                     {telemetry.map((t) => {
-                      const color = getDriverColor(t.driver_code);
+                      const color = getDriverColor(t.driver_code, session?.season);
                       if (activeChart === "speed") {
                         return (
                           <Line
@@ -347,7 +326,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                           key={`brake_${t.driver_code}`}
                           type="monotone"
                           dataKey={`brake_${t.driver_code}`}
-                          stroke={getDriverColor(t.driver_code)}
+                          stroke={getDriverColor(t.driver_code, session?.season)}
                           strokeWidth={2}
                           strokeDasharray="4 2"
                           dot={false}
@@ -390,7 +369,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                             key={t.driver_code}
                             type="monotone"
                             dataKey={`delta_${t.driver_code}`}
-                            stroke={getDriverColor(t.driver_code)}
+                            stroke={getDriverColor(t.driver_code, session?.season)}
                             strokeWidth={2}
                             dot={false}
                             name={`${t.driver_code} vs ${telemetry[0].driver_code}`}
@@ -408,7 +387,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                   <div key={t.driver_code} className="flex items-center gap-2">
                     <div
                       className="w-4 h-4 rounded"
-                      style={{ backgroundColor: getDriverColor(t.driver_code) }}
+                      style={{ backgroundColor: getDriverColor(t.driver_code, session?.season) }}
                     />
                     <span className="text-sm font-semibold">{t.driver_code}</span>
                     <span className="text-sm text-f1-light">Lap {t.lap_number}</span>

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useAdmin } from "@/contexts/AdminContext";
 import { AdminLogin } from "@/components/AdminLogin";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { AnimatedCard, AnimatedList, AnimatedListItem } from "@/components/AnimatedCard";
 
 interface Weekend {
   id: number;
@@ -327,14 +329,28 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-f1-black">
       {/* Header */}
-      <header className="border-b border-f1-gray/30 bg-f1-dark/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-1 h-8 bg-f1-red rounded-full" />
+      <motion.header 
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="border-b border-f1-gray/30 glass sticky top-0 z-50"
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-f1-red/10 to-transparent pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between relative">
+          <motion.div 
+            className="flex items-center gap-3"
+            whileHover={{ scale: 1.05 }}
+            transition={{ type: "spring", stiffness: 400 }}
+          >
+            <motion.div 
+              className="w-1 h-8 bg-f1-red rounded-full"
+              animate={{ height: [32, 40, 32] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
             <h1 className="text-2xl font-bold tracking-tight">
               F1<span className="text-f1-red">Pro</span>
             </h1>
-          </div>
+          </motion.div>
           
           <div className="flex items-center gap-4">
             {/* Season Selector */}
@@ -357,7 +373,7 @@ export default function Home() {
             <AdminLogin />
           </div>
         </div>
-      </header>
+      </motion.header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {error && (
@@ -368,54 +384,91 @@ export default function Home() {
 
         <div className="grid grid-cols-12 gap-6">
           {/* GP Selector - Left Panel */}
-          <aside className="col-span-3">
-            <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 overflow-hidden">
-              <div className="px-4 py-3 border-b border-f1-gray/20">
+          <motion.aside 
+            className="col-span-3"
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <div className="glass rounded-xl overflow-hidden hover-lift">
+              <div className="px-4 py-3 border-b border-f1-gray/20 bg-gradient-to-r from-f1-red/20 to-transparent">
                 <h2 className="text-sm font-semibold text-f1-light uppercase tracking-wider">
                   Grand Prix
                 </h2>
               </div>
               <div className="max-h-[calc(100vh-220px)] overflow-y-auto">
-                {weekends.map((w) => (
-                  <button
-                    key={w.id}
-                    onClick={() => setSelectedWeekend(w)}
-                    className={`w-full text-left px-4 py-3 border-b border-f1-gray/10 transition-all hover:bg-f1-gray/20 ${
-                      selectedWeekend?.id === w.id
-                        ? "bg-f1-red/10 border-l-2 border-l-f1-red"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-f1-light text-xs font-mono w-6">
-                        R{w.round}
-                      </span>
-                      <div>
-                        <p className="font-semibold text-sm">{w.name}</p>
-                        <p className="text-xs text-f1-light">{w.circuit}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                <AnimatedList>
+                  {weekends.map((w, index) => (
+                    <AnimatedListItem key={w.id}>
+                      <motion.button
+                        onClick={() => setSelectedWeekend(w)}
+                        className={`w-full text-left px-4 py-3 border-b border-f1-gray/10 transition-all ${
+                          selectedWeekend?.id === w.id
+                            ? "bg-gradient-to-r from-f1-red/20 to-transparent border-l-2 border-l-f1-red"
+                            : "hover:bg-f1-gray/20"
+                        }`}
+                        whileHover={{ x: 5 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <motion.span 
+                            className="text-f1-light text-xs font-mono w-6"
+                            animate={selectedWeekend?.id === w.id ? { color: "#e10600" } : {}}
+                          >
+                            R{w.round}
+                          </motion.span>
+                          <div>
+                            <p className="font-semibold text-sm">{w.name}</p>
+                            <p className="text-xs text-f1-light">{w.circuit}</p>
+                          </div>
+                        </div>
+                      </motion.button>
+                    </AnimatedListItem>
+                  ))}
+                </AnimatedList>
               </div>
             </div>
-          </aside>
+          </motion.aside>
 
           {/* Main Content */}
           <main className="col-span-9">
-            {selectedWeekend && (
-              <>
-                {/* Weekend Header */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 text-f1-light text-sm mb-1">
-                        <span>Round {selectedWeekend.round}</span>
-                        <span>•</span>
-                        <span>{selectedWeekend.circuit}</span>
+            <AnimatePresence mode="wait">
+              {selectedWeekend && (
+                <motion.div
+                  key={selectedWeekend.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {/* Weekend Header */}
+                  <motion.div 
+                    className="mb-6"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <motion.div 
+                          className="flex items-center gap-2 text-f1-light text-sm mb-1"
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 }}
+                        >
+                          <span>Round {selectedWeekend.round}</span>
+                          <span>•</span>
+                          <span>{selectedWeekend.circuit}</span>
+                        </motion.div>
+                        <motion.h2 
+                          className="text-3xl font-bold bg-gradient-to-r from-f1-white to-f1-light bg-clip-text text-transparent"
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.2 }}
+                        >
+                          {selectedWeekend.name}
+                        </motion.h2>
                       </div>
-                      <h2 className="text-3xl font-bold">{selectedWeekend.name}</h2>
-                    </div>
                     
                     {/* Load Data Button - Only show for admin users */}
                     {selectedWeekend.sessions.length === 0 && isAdmin && (
@@ -526,7 +579,7 @@ export default function Home() {
                       )}
                     </div>
                   )}
-                </div>
+                </motion.div>
 
                 {/* Session Tabs or No Data Message */}
                 {selectedWeekend.sessions.length === 0 ? (
@@ -658,25 +711,35 @@ export default function Home() {
                       </div>
                   {selectedSessionId && (
                     <div className="flex gap-2">
-                      <Link
-                        href={`/session/${selectedSessionId}`}
-                        className="flex items-center gap-2 px-4 py-2 bg-f1-red hover:bg-red-600 text-white rounded-lg font-semibold text-sm transition-all"
+                      <motion.div
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        View Telemetry
-                      </Link>
-                      {sessionData?.session.session_code === "R" && (
                         <Link
-                          href={`/race/${selectedSessionId}`}
-                          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-sm transition-all"
+                          href={`/session/${selectedSessionId}`}
+                          className="flex items-center gap-2 px-4 py-2 gradient-red text-white rounded-lg font-semibold text-sm transition-all shadow-lg hover:shadow-xl"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                           </svg>
-                          Race Analysis
+                          View Telemetry
                         </Link>
+                      </motion.div>
+                      {sessionData?.session.session_code === "R" && (
+                        <motion.div
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <Link
+                            href={`/race/${selectedSessionId}`}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg font-semibold text-sm transition-all shadow-lg hover:shadow-xl"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                            </svg>
+                            Race Analysis
+                          </Link>
+                        </motion.div>
                       )}
                     </div>
                   )}
@@ -774,7 +837,7 @@ export default function Home() {
                 )}
                 </>
               )}
-              </>
+            </motion.div>
             )}
 
             {!selectedWeekend && !loading && (
@@ -786,6 +849,7 @@ export default function Home() {
                 </p>
               </div>
             )}
+            </AnimatePresence>
           </main>
         </div>
       </div>

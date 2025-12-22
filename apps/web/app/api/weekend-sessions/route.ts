@@ -20,16 +20,19 @@ export async function GET(request: NextRequest) {
       5,  // China
       6,  // Miami  
       11, // Austria
-      18, // USA (Austin)
-      21, // Brazil
+      19, // USA (Austin) - corrected round number
+      21, // Brazil (São Paulo)
       23, // Qatar
     ];
 
     const sprintWeekends2025 = [
-      // Add 2025 sprint weekends when announced
-      5,  // China (confirmed)
-      6,  // Miami (confirmed)
-      // More to be announced
+      // 2025 sprint weekends (6 confirmed)
+      2,  // China
+      6,  // Miami
+      13, // Belgium
+      19, // USA (Austin)
+      21, // Brazil (São Paulo)
+      23, // Qatar
     ];
 
     const yearNum = parseInt(season);

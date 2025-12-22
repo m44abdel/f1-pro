@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { getDriverColor as getDriverColorBySeason } from "@/lib/driver-colors";
 import {
   LineChart,
   Line,
@@ -69,33 +70,9 @@ const TIRE_COLORS: Record<string, string> = {
   WET: "#3b82f6",       // Blue
 };
 
-// F1 team colors
-const DRIVER_COLORS: Record<string, string> = {
-  VER: "#3671C6",
-  PER: "#3671C6",
-  HAM: "#6CD3BF",
-  RUS: "#6CD3BF",
-  LEC: "#F91536",
-  SAI: "#F91536",
-  NOR: "#F58020",
-  PIA: "#F58020",
-  ALO: "#229971",
-  STR: "#229971",
-  GAS: "#5E8FAA",
-  OCO: "#5E8FAA",
-  TSU: "#6692FF",
-  RIC: "#6692FF",
-  BOT: "#C92D4B",
-  ZHO: "#C92D4B",
-  MAG: "#B6BABD",
-  HUL: "#B6BABD",
-  ALB: "#64C4FF",
-  SAR: "#64C4FF",
-  DEFAULT: "#e10600",
-};
-
-function getDriverColor(code: string): string {
-  return DRIVER_COLORS[code] || DRIVER_COLORS.DEFAULT;
+// Get driver color based on season
+function getDriverColor(code: string, season?: number): string {
+  return getDriverColorBySeason(code, season || 2024);
 }
 
 function formatLapTime(ms: number | null): string {
@@ -111,8 +88,8 @@ function formatGap(ms: number | null): string {
   return `+${(ms / 1000).toFixed(1)}s`;
 }
 
-export default function RacePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function RacePage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [raceData, setRaceData] = useState<{
     drivers: RaceDriver[];
@@ -292,7 +269,7 @@ export default function RacePage({ params }: { params: Promise<{ id: string }> }
                             <div className="flex items-center gap-3">
                               <span 
                                 className="font-mono font-bold"
-                                style={{ color: getDriverColor(pos.driver_code) }}
+                                style={{ color: getDriverColor(pos.driver_code, session?.season) }}
                               >
                                 {pos.driver_code}
                               </span>
@@ -342,7 +319,7 @@ export default function RacePage({ params }: { params: Promise<{ id: string }> }
                 .map((driver) => (
                   <div key={driver.driver_id} className="flex items-center gap-4">
                     <div className="w-16 text-right">
-                      <span className="font-mono font-bold" style={{ color: getDriverColor(driver.driver_code) }}>
+                      <span className="font-mono font-bold" style={{ color: getDriverColor(driver.driver_code, session?.season) }}>
                         {driver.driver_code}
                       </span>
                     </div>
@@ -466,7 +443,7 @@ export default function RacePage({ params }: { params: Promise<{ id: string }> }
                         key={driverCode}
                         type="monotone"
                         dataKey={driverCode}
-                        stroke={getDriverColor(driverCode)}
+                        stroke={getDriverColor(driverCode, session?.season)}
                         strokeWidth={2}
                         dot={false}
                         name={driverCode}
@@ -498,8 +475,8 @@ export default function RacePage({ params }: { params: Promise<{ id: string }> }
                           : "bg-f1-dark border-f1-gray/30 text-f1-light hover:border-f1-gray/50"
                       }`}
                       style={isSelected ? { 
-                        backgroundColor: getDriverColor(driver.driver_code), 
-                        borderColor: getDriverColor(driver.driver_code) 
+                        backgroundColor: getDriverColor(driver.driver_code, session?.season), 
+                        borderColor: getDriverColor(driver.driver_code, session?.season) 
                       } : {}}
                     >
                       {driver.driver_code} P{driver.final_position || "-"}
@@ -576,7 +553,7 @@ export default function RacePage({ params }: { params: Promise<{ id: string }> }
                         key={driverCode}
                         type="monotone"
                         dataKey={driverCode}
-                        stroke={getDriverColor(driverCode)}
+                        stroke={getDriverColor(driverCode, session?.season)}
                         strokeWidth={2}
                         dot={(props: any) => {
                           const { cx, cy, payload } = props;

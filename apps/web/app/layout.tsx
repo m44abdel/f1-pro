@@ -3,6 +3,7 @@ import "./globals.css";
 import { AdminProvider } from "@/contexts/AdminContext";
 import { AdminLogin } from "@/components/AdminLogin";
 import { SqlQueryPanel } from "@/components/SqlQueryPanel";
+import { AnimatedBackground } from "@/components/AnimatedBackground";
 
 export const metadata: Metadata = {
   title: "F1 Pro - Advanced Telemetry & Analytics",
@@ -23,6 +24,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
+        <AnimatedBackground />
         <AdminProvider>
           {/* SQL Query Panel for Admins */}
           <SqlQueryPanel />

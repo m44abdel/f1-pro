@@ -1,6 +1,9 @@
-export const metadata = {
-  title: "F1 Pro",
-  description: "F1 Data Application",
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "F1 Pro - Advanced Telemetry & Analytics",
+  description: "Professional F1 data analysis, telemetry visualization, and race predictions",
 };
 
 export default function RootLayout({
@@ -10,8 +13,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
-

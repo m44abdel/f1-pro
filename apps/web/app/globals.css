@@ -52,6 +52,14 @@ body {
   background: var(--f1-light);
 }
 
+/* Admin UI styles */
+.admin-login-button {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+}
+
 /* Selection highlight */
 ::selection {
   background: var(--f1-red);

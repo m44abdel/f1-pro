@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAdmin } from "@/contexts/AdminContext";
+import { AdminLogin } from "@/components/AdminLogin";
 import Link from "next/link";
 
 interface Weekend {
@@ -71,6 +73,7 @@ function formatDelta(ms: number | null, leaderMs: number | null): string {
 }
 
 export default function Home() {
+  const { isAdmin, adminToken } = useAdmin();
   const [seasons, setSeasons] = useState<number[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [weekends, setWeekends] = useState<Weekend[]>([]);
@@ -198,9 +201,18 @@ export default function Home() {
     const sessionsToLoad = specificSessions || availableSessions;
     
     try {
+      // Include admin token if available
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+      
+      if (adminToken) {
+        headers["Authorization"] = `Bearer ${adminToken}`;
+      }
+      
       const response = await fetch("/api/ingest", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           season: selectedSeason,
           round: selectedWeekend.round,
@@ -324,20 +336,25 @@ export default function Home() {
             </h1>
           </div>
           
-          {/* Season Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-f1-light text-sm">Season</span>
-            <select
-              value={selectedSeason ?? ""}
-              onChange={(e) => setSelectedSeason(Number(e.target.value))}
-              className="bg-f1-dark border border-f1-gray/50 rounded-lg px-4 py-2 text-f1-white font-semibold focus:outline-none focus:border-f1-red transition-colors cursor-pointer"
-            >
-              {seasons.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-4">
+            {/* Season Selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-f1-light text-sm">Season</span>
+              <select
+                value={selectedSeason ?? ""}
+                onChange={(e) => setSelectedSeason(Number(e.target.value))}
+                className="bg-f1-dark border border-f1-gray/50 rounded-lg px-4 py-2 text-f1-white font-semibold focus:outline-none focus:border-f1-red transition-colors cursor-pointer"
+              >
+                {seasons.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Admin Login */}
+            <AdminLogin />
           </div>
         </div>
       </header>
@@ -400,8 +417,8 @@ export default function Home() {
                       <h2 className="text-3xl font-bold">{selectedWeekend.name}</h2>
                     </div>
                     
-                    {/* Load Data Button */}
-                    {selectedWeekend.sessions.length === 0 && (
+                    {/* Load Data Button - Only show for admin users */}
+                    {selectedWeekend.sessions.length === 0 && isAdmin && (
                       <div className="flex gap-2">
                         <button
                           onClick={() => loadWeekendData()}
@@ -513,11 +530,12 @@ export default function Home() {
 
                 {/* Session Tabs or No Data Message */}
                 {selectedWeekend.sessions.length === 0 ? (
-                  <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-8 mb-6">
-                    <h3 className="text-xl font-semibold mb-4">Available Sessions</h3>
-                    <p className="text-f1-light mb-6">
-                      Choose which sessions to download:
-                    </p>
+                  isAdmin ? (
+                    <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-8 mb-6">
+                      <h3 className="text-xl font-semibold mb-4">Available Sessions</h3>
+                      <p className="text-f1-light mb-6">
+                        Choose which sessions to download:
+                      </p>
                     
                     {/* Session Download Options */}
                     <div className="grid grid-cols-2 gap-4">
@@ -561,25 +579,83 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
+                  ) : (
+                    <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-8 mb-6">
+                      <h3 className="text-xl font-semibold mb-4">No Data Available</h3>
+                      <p className="text-f1-light">
+                        Data for this Grand Prix weekend is not yet available.
+                      </p>
+                    </div>
+                  )
                 ) : (
                   <>
                     {/* Session Tabs */}
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex gap-2">
                         {selectedWeekend.sessions.map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => setSelectedSessionId(s.id)}
-                        className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
-                          selectedSessionId === s.id
-                            ? `${SESSION_COLORS[s.code] || "bg-f1-gray"} text-white shadow-lg`
-                            : "bg-f1-dark border border-f1-gray/30 text-f1-light hover:border-f1-gray/50 hover:text-f1-white"
-                        }`}
-                      >
-                        {SESSION_LABELS[s.code] || s.code}
-                      </button>
-                    ))}
-                  </div>
+                          <button
+                            key={s.id}
+                            onClick={() => setSelectedSessionId(s.id)}
+                            className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                              selectedSessionId === s.id
+                                ? `${SESSION_COLORS[s.code] || "bg-f1-gray"} text-white shadow-lg`
+                                : "bg-f1-dark border border-f1-gray/30 text-f1-light hover:border-f1-gray/50 hover:text-f1-white"
+                            }`}
+                          >
+                            {SESSION_LABELS[s.code] || s.code}
+                          </button>
+                        ))}
+                        
+                        {/* Download missing sessions button for admins */}
+                        {isAdmin && (() => {
+                          const loadedSessions = selectedWeekend.sessions.map(s => s.code);
+                          const missingSessions = availableSessions.filter(code => !loadedSessions.includes(code));
+                          
+                          if (missingSessions.length > 0) {
+                            return (
+                              <div className="relative session-selector ml-2">
+                                <button
+                                  onClick={() => setShowSessionSelector(!showSessionSelector)}
+                                  disabled={ingesting}
+                                  className={`flex items-center gap-1 px-3 py-2 rounded-lg font-semibold text-sm transition-all border ${
+                                    ingesting
+                                      ? "bg-f1-gray/50 text-f1-light cursor-not-allowed border-f1-gray/30"
+                                      : "bg-green-600 border-green-700 text-white hover:bg-green-700"
+                                  }`}
+                                  title="Download missing sessions"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                  Load More
+                                </button>
+                                
+                                {/* Dropdown Menu */}
+                                {showSessionSelector && !ingesting && (
+                                  <div className="absolute right-0 mt-2 w-48 bg-f1-dark border border-f1-gray/30 rounded-lg shadow-lg overflow-hidden z-10">
+                                    <div className="p-2 text-xs font-semibold text-f1-light uppercase tracking-wider border-b border-f1-gray/30">
+                                      Missing Sessions
+                                    </div>
+                                    {missingSessions.map((sessionCode) => (
+                                      <button
+                                        key={sessionCode}
+                                        onClick={() => {
+                                          loadWeekendData([sessionCode]);
+                                          setShowSessionSelector(false);
+                                        }}
+                                        className="w-full px-4 py-2 text-left text-sm hover:bg-f1-gray/20 transition-colors"
+                                      >
+                                        {SESSION_LABELS[sessionCode] || sessionCode}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                   {selectedSessionId && (
                     <div className="flex gap-2">
                       <Link

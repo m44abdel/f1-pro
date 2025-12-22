@@ -268,8 +268,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={chartData}
-                    onMouseMove={(e) => {
-                      if (e.activePayload) {
+                    onMouseMove={(e: any) => {
+                      if (e?.activePayload) {
                         setHoveredDistance(e.activePayload[0]?.payload?.distance);
                       }
                     }}

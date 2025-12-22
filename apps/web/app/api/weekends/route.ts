@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { getReadOnlyPool } from "@/lib/db-readonly";
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       );
     }
     
-    const pool = getPool();
+    const pool = getReadOnlyPool();
     const result = await pool.query(`
       SELECT 
         w.id,

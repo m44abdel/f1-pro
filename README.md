@@ -81,3 +81,25 @@ f1-pro/
 ├── infra/db/         # Database schema
 └── f1_venv/          # Python virtual environment
 ```
+
+## Deployment
+
+### Security Considerations
+
+For production deployment:
+1. Create a read-only database user (see `infra/db/002_readonly_user.sql`)
+2. Use separate environment variables for read/write database access
+3. Protect data ingestion endpoints with authentication
+4. Hide admin features from public users
+
+### Quick Deploy to Vercel
+
+1. Fork/clone this repository
+2. Connect to Vercel
+3. Set environment variables:
+   - `DATABASE_URL_READONLY` - Read-only database connection
+   - `DATABASE_URL` - Admin database connection (keep secure)
+   - `ADMIN_API_TOKEN` - Secret token for admin operations
+4. Deploy
+
+See `DEPLOYMENT.md` for detailed deployment and security instructions.

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { getReadOnlyPool } from "@/lib/db-readonly";
 
 export async function GET() {
   try {
-    const pool = getPool();
+    const pool = getReadOnlyPool();
     const result = await pool.query("SELECT NOW() as current_time, version() as pg_version");
     
     return NextResponse.json({

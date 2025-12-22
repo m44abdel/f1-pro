@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { getReadOnlyPool } from "@/lib/db-readonly";
 
 export async function GET() {
   try {
-    const pool = getPool();
+    const pool = getReadOnlyPool();
     
     // Get qualifying results with driver info
     const results = await pool.query(`

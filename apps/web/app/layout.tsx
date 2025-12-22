@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AdminProvider } from "@/contexts/AdminContext";
+import { AdminLogin } from "@/components/AdminLogin";
+import { SqlQueryPanel } from "@/components/SqlQueryPanel";
 
 export const metadata: Metadata = {
   title: "F1 Pro - Advanced Telemetry & Analytics",
@@ -19,7 +22,13 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <AdminProvider>
+          {/* SQL Query Panel for Admins */}
+          <SqlQueryPanel />
+          {children}
+        </AdminProvider>
+      </body>
     </html>
   );
 }

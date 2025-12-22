@@ -2,8 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { spawn } from "child_process";
 import path from "path";
+import { requireAuth } from "@/lib/auth";
+import { cookies } from "next/headers";
 
 export async function POST(request: NextRequest) {
+  // Check authentication - either admin session cookie or API token
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get('admin_session');
+  const hasValidSession = !!sessionCookie;
+  
+  if (!hasValidSession) {
+    // Fall back to API token authentication
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
+  
   try {
     const { season, round, sessions } = await request.json();
     

@@ -246,3 +246,11 @@ logs/
 # Database dumps
 *.sql.bak
 *.dump
+
+# Environment example files
+.env.example
+.env.*.example
+
+# Admin setup script (contains password)
+setup-admin.sh
+DEPLOYMENT_PRIVATE.md

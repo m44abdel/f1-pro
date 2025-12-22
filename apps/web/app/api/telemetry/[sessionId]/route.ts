@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { getReadOnlyPool } from "@/lib/db-readonly";
 
 export async function GET(
   request: Request,
@@ -10,7 +10,7 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const driverIds = searchParams.get("drivers")?.split(",").map(Number) || [];
     
-    const pool = getPool();
+    const pool = getReadOnlyPool();
     
     // Get telemetry for specified drivers (or all if none specified)
     let query = `

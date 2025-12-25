@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { getDriverColor as getDriverColorBySeason } from "@/lib/driver-colors";
+import { SiteBrand } from "@/components/SiteBrand";
 import {
   LineChart,
   Line,
@@ -10,9 +11,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  Cell,
 } from "recharts";
 
 interface RaceDriver {
@@ -63,14 +61,13 @@ interface SessionInfo {
 }
 
 const TIRE_COLORS: Record<string, string> = {
-  SOFT: "#ef4444",      // Red
-  MEDIUM: "#eab308",    // Yellow
-  HARD: "#f8f8f8",      // White
-  INTERMEDIATE: "#22c55e", // Green
-  WET: "#3b82f6",       // Blue
+  SOFT: "#ef4444",
+  MEDIUM: "#eab308",
+  HARD: "#f8f8f8",
+  INTERMEDIATE: "#22c55e",
+  WET: "#3b82f6",
 };
 
-// Get driver color based on season
 function getDriverColor(code: string, season?: number): string {
   return getDriverColorBySeason(code, season || 2024);
 }
@@ -88,8 +85,9 @@ function formatGap(ms: number | null): string {
   return `+${(ms / 1000).toFixed(1)}s`;
 }
 
-export default function RacePage({ params }: { params: { id: string } }) {
-  const { id } = params;
+// Next 16/React 19: route params are a promise; unwrap with `use`
+export default function RacePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [raceData, setRaceData] = useState<{
     drivers: RaceDriver[];
@@ -102,30 +100,31 @@ export default function RacePage({ params }: { params: { id: string } }) {
 
   // Fetch session info
   useEffect(() => {
+    if (!id) return;
     fetch(`/api/session/${id}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
           setSession(data.data.session);
         }
-      });
+      })
+      .catch(() => {});
   }, [id]);
 
   // Fetch race data
   useEffect(() => {
+    if (!id) return;
     setLoading(true);
     fetch(`/api/race/${id}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
           setRaceData(data.data);
-          // Auto-select top 5 drivers
           const topDrivers = data.data.drivers
             .sort((a: RaceDriver, b: RaceDriver) => (a.final_position || 99) - (b.final_position || 99))
             .slice(0, 5)
             .map((d: RaceDriver) => d.driver_code);
           setSelectedDrivers(topDrivers);
-          // Set current lap to last lap
           if (data.data.positions.length > 0) {
             setCurrentLap(data.data.positions[data.data.positions.length - 1].lap_number);
           }
@@ -135,39 +134,101 @@ export default function RacePage({ params }: { params: { id: string } }) {
       .catch(() => setLoading(false));
   }, [id]);
 
+  // Toggle driver selection
+  const toggleDriver = useCallback((driverCode: string) => {
+    setSelectedDrivers(prev => 
+      prev.includes(driverCode) 
+        ? prev.filter(d => d !== driverCode) 
+        : [...prev, driverCode]
+    );
+  }, []);
+
+  // Memoized values
+  const maxLaps = useMemo(() => {
+    if (!raceData) return 0;
+    return Math.max(...raceData.drivers.flatMap(d => d.laps.map(l => l.lap_number)));
+  }, [raceData]);
+
+  const currentPositions = useMemo(() => {
+    if (!currentLap || !raceData) return [];
+    return raceData.positions.find(p => p.lap_number === currentLap)?.positions || [];
+  }, [currentLap, raceData]);
+
+  // Memoized position chart data
+  const positionChartData = useMemo(() => {
+    if (!raceData) return [];
+    return raceData.positions.map(lap => {
+      const dataPoint: Record<string, number | null> = { lap: lap.lap_number };
+      selectedDrivers.forEach(driverCode => {
+        const driver = raceData.drivers.find(d => d.driver_code === driverCode);
+        if (driver) {
+          const pos = lap.positions.find(p => String(p.driver_id) === String(driver.driver_id));
+          dataPoint[driverCode] = pos?.position || null;
+        }
+      });
+      return dataPoint;
+    });
+  }, [raceData, selectedDrivers]);
+
+  // Memoized lap time chart data
+  const lapTimeChartData = useMemo(() => {
+    if (!raceData) return [];
+    
+    const allLapNumbers = new Set<number>();
+    raceData.drivers
+      .filter(d => selectedDrivers.includes(d.driver_code))
+      .forEach(driver => {
+        driver.laps.forEach(lap => {
+          if (lap.lap_time_ms && lap.lap_time_ms < 120000) {
+            allLapNumbers.add(lap.lap_number);
+          }
+        });
+      });
+    
+    return Array.from(allLapNumbers).sort((a, b) => a - b).map(lapNum => {
+      const dataPoint: Record<string, number | boolean | null> = { lap: lapNum };
+      
+      selectedDrivers.forEach(driverCode => {
+        const driver = raceData.drivers.find(d => d.driver_code === driverCode);
+        if (driver) {
+          const lap = driver.laps.find(l => l.lap_number === lapNum);
+          dataPoint[driverCode] = lap?.lap_time_ms && lap.lap_time_ms < 120000 ? lap.lap_time_ms : null;
+          dataPoint[`${driverCode}_pit`] = driver.pit_stops.some(p => p.lap_number === lapNum);
+        }
+      });
+      
+      return dataPoint;
+    });
+  }, [raceData, selectedDrivers]);
+
   if (loading || !raceData) {
     return (
       <div className="min-h-screen bg-f1-black flex items-center justify-center">
-        <div className="inline-block w-8 h-8 border-2 border-f1-red border-t-transparent rounded-full animate-spin" />
+        <div className="text-center">
+          <div className="inline-block w-10 h-10 border-3 border-f1-red border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-gray-400">Loading race data...</p>
+        </div>
       </div>
     );
   }
 
-  const maxLaps = Math.max(...raceData.drivers.flatMap(d => d.laps.map(l => l.lap_number)));
-  const currentPositions = currentLap ? raceData.positions.find(p => p.lap_number === currentLap)?.positions || [] : [];
-
   return (
     <div className="min-h-screen bg-f1-black">
       {/* Header */}
-      <header className="border-b border-f1-gray/30 bg-f1-dark/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="border-b border-f1-gray/30 bg-f1-dark/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href={`/session/${id}`} className="text-f1-light hover:text-f1-white transition-colors">
+            <Link href="/" className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-f1-gray/30 transition-all">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <div className="flex items-center gap-3">
-              <div className="w-1 h-8 bg-f1-red rounded-full" />
-              <h1 className="text-2xl font-bold tracking-tight">
-                F1<span className="text-f1-red">Pro</span> Race
-              </h1>
-            </div>
+            <SiteBrand subtitle="Race Center" />
           </div>
           {session && (
             <div className="text-right">
-              <p className="text-f1-white font-semibold">{session.weekend_name}</p>
-              <p className="text-f1-light text-sm">{session.session_code} - {session.circuit}</p>
+              <p className="text-white font-semibold">{session.weekend_name}</p>
+              <p className="text-gray-400 text-sm">{session.session_code} - {session.circuit}</p>
             </div>
           )}
         </div>
@@ -187,8 +248,8 @@ export default function RacePage({ params }: { params: { id: string } }) {
               onClick={() => setActiveView(tab.key as typeof activeView)}
               className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
                 activeView === tab.key
-                  ? "bg-f1-red text-white"
-                  : "bg-f1-dark border border-f1-gray/30 text-f1-light hover:text-f1-white"
+                  ? "bg-f1-red text-white shadow-lg"
+                  : "bg-f1-dark/50 border border-f1-gray/30 text-gray-400 hover:text-white hover:bg-f1-dark"
               }`}
             >
               {tab.label}
@@ -199,10 +260,9 @@ export default function RacePage({ params }: { params: { id: string } }) {
         {/* Timing Tower View */}
         {activeView === "timing" && (
           <div className="grid grid-cols-12 gap-6">
-            {/* Lap Selector */}
             <div className="col-span-3">
               <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
-                <h3 className="text-sm font-semibold text-f1-light uppercase tracking-wider mb-4">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
                   Lap {currentLap} / {maxLaps}
                 </h3>
                 <input
@@ -211,33 +271,31 @@ export default function RacePage({ params }: { params: { id: string } }) {
                   max={maxLaps}
                   value={currentLap || 1}
                   onChange={(e) => setCurrentLap(Number(e.target.value))}
-                  className="w-full"
+                  className="w-full accent-f1-red"
                 />
-                <div className="flex justify-between text-xs text-f1-light mt-2">
+                <div className="flex justify-between text-xs text-gray-500 mt-2">
                   <span>Lap 1</span>
                   <span>Lap {maxLaps}</span>
                 </div>
               </div>
             </div>
 
-            {/* Timing Tower */}
             <div className="col-span-9">
               <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 overflow-hidden">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-f1-gray/30 text-f1-light text-xs uppercase tracking-wider">
+                    <tr className="border-b border-f1-gray/30 text-gray-500 text-xs uppercase tracking-wider">
                       <th className="text-left px-4 py-3 w-16">Pos</th>
                       <th className="text-left px-4 py-3">Driver</th>
                       <th className="text-right px-4 py-3 w-24">Gap</th>
                       <th className="text-right px-4 py-3 w-24">Int</th>
                       <th className="text-center px-4 py-3 w-20">Tire</th>
-                      <th className="text-right px-4 py-3 w-20">Laps</th>
+                      <th className="text-right px-4 py-3 w-20">Age</th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentPositions.map((pos, i) => {
                       const driver = raceData.drivers.find(d => String(d.driver_id) === String(pos.driver_id));
-                      const currentLapData = driver?.laps.find(l => l.lap_number === currentLap);
                       const stint = driver?.stints.find(s => 
                         currentLap! >= s.start_lap && (s.end_lap === null || currentLap! <= s.end_lap)
                       );
@@ -247,38 +305,33 @@ export default function RacePage({ params }: { params: { id: string } }) {
                         <tr
                           key={pos.driver_id}
                           className={`border-b border-f1-gray/10 transition-colors hover:bg-f1-gray/10 ${
-                            i < 3 ? "bg-gradient-to-r from-f1-red/5 to-transparent" : ""
+                            i < 3 ? "bg-gradient-to-r from-f1-red/10 to-transparent" : ""
                           }`}
                         >
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${
-                                i === 0
-                                  ? "bg-yellow-500 text-black"
-                                  : i === 1
-                                  ? "bg-gray-300 text-black"
-                                  : i === 2
-                                  ? "bg-amber-600 text-white"
-                                  : "bg-f1-gray/30 text-f1-light"
+                                i === 0 ? "bg-yellow-500 text-black"
+                                  : i === 1 ? "bg-gray-300 text-black"
+                                  : i === 2 ? "bg-amber-600 text-white"
+                                  : "bg-f1-gray/30 text-gray-400"
                               }`}
                             >
                               {pos.position}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <span 
-                                className="font-mono font-bold"
-                                style={{ color: getDriverColor(pos.driver_code, session?.season) }}
-                              >
-                                {pos.driver_code}
-                              </span>
-                            </div>
+                            <span 
+                              className="font-mono font-bold"
+                              style={{ color: getDriverColor(pos.driver_code, session?.season) }}
+                            >
+                              {pos.driver_code}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
+                          <td className="px-4 py-3 text-right font-mono text-sm text-white">
                             {i === 0 ? "-" : formatGap(pos.gap_to_leader_ms)}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm text-f1-light">
+                          <td className="px-4 py-3 text-right font-mono text-sm text-gray-400">
                             {i === 0 ? "-" : formatGap(pos.interval_ms)}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -294,7 +347,7 @@ export default function RacePage({ params }: { params: { id: string } }) {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right text-sm text-f1-light">
+                          <td className="px-4 py-3 text-right text-sm text-gray-400">
                             {tireAge}
                           </td>
                         </tr>
@@ -310,7 +363,7 @@ export default function RacePage({ params }: { params: { id: string } }) {
         {/* Stint Strategy View */}
         {activeView === "stints" && (
           <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
-            <h3 className="text-sm font-semibold text-f1-light uppercase tracking-wider mb-4">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
               Tire Strategy
             </h3>
             <div className="space-y-2">
@@ -332,7 +385,7 @@ export default function RacePage({ params }: { params: { id: string } }) {
                         return (
                           <div
                             key={stint.stint_number}
-                            className="absolute h-full flex items-center justify-center text-xs font-bold group"
+                            className="absolute h-full flex items-center justify-center text-xs font-bold cursor-pointer group"
                             style={{
                               left: `${startPercent}%`,
                               width: `${widthPercent}%`,
@@ -341,7 +394,7 @@ export default function RacePage({ params }: { params: { id: string } }) {
                             }}
                           >
                             {stint.compound.charAt(0)}
-                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-f1-dark/90 text-f1-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-f1-dark border border-f1-gray/30 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
                               Laps {stint.start_lap}-{endLap} ({endLap - stint.start_lap + 1} laps)
                             </div>
                           </div>
@@ -351,24 +404,17 @@ export default function RacePage({ params }: { params: { id: string } }) {
                         <div
                           key={stop.lap_number}
                           className="absolute w-0.5 h-10 bg-f1-red z-10"
-                          style={{
-                            left: `${(stop.lap_number / maxLaps) * 100}%`,
-                            top: "-4px"
-                          }}
-                        >
-                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-f1-dark/90 text-f1-white text-xs rounded opacity-0 hover:opacity-100 transition-opacity whitespace-nowrap">
-                            Lap {stop.lap_number} - {formatLapTime(stop.duration_ms)}
-                          </div>
-                        </div>
+                          style={{ left: `${(stop.lap_number / maxLaps) * 100}%`, top: "-4px" }}
+                        />
                       ))}
                     </div>
-                    <div className="text-xs text-f1-light">
+                    <div className="w-10 text-xs text-gray-400 text-center">
                       P{driver.final_position || "-"}
                     </div>
                   </div>
                 ))}
             </div>
-            <div className="flex items-center gap-6 mt-4 text-xs text-f1-light">
+            <div className="flex items-center gap-6 mt-6 text-xs text-gray-400">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded" style={{ backgroundColor: TIRE_COLORS.SOFT }} />
                 <span>Soft</span>
@@ -378,7 +424,7 @@ export default function RacePage({ params }: { params: { id: string } }) {
                 <span>Medium</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded" style={{ backgroundColor: TIRE_COLORS.HARD }} />
+                <div className="w-4 h-4 rounded border border-gray-600" style={{ backgroundColor: TIRE_COLORS.HARD }} />
                 <span>Hard</span>
               </div>
               <div className="flex items-center gap-2">
@@ -390,71 +436,37 @@ export default function RacePage({ params }: { params: { id: string } }) {
         )}
 
         {/* Position Changes View */}
-        {activeView === "positions" && (() => {
-          // Transform data for proper charting
-          const positionChartData = raceData.positions.map(lap => {
-            const dataPoint: any = { lap: lap.lap_number };
-            selectedDrivers.forEach(driverCode => {
-              const driver = raceData.drivers.find(d => d.driver_code === driverCode);
-              if (driver) {
-                const pos = lap.positions.find(p => String(p.driver_id) === String(driver.driver_id));
-                dataPoint[driverCode] = pos?.position || null;
-              }
-            });
-            return dataPoint;
-          });
-
-          return (
-            <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
-              <h3 className="text-sm font-semibold text-f1-light uppercase tracking-wider mb-4">
-                Position Changes
-              </h3>
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={positionChartData}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <XAxis
-                      dataKey="lap"
-                      stroke="#9ca3af"
-                      fontSize={11}
-                      label={{ value: "Lap", position: "insideBottom", offset: -5 }}
+        {activeView === "positions" && (
+          <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+              Position Changes
+            </h3>
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={positionChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <XAxis dataKey="lap" stroke="#6b7280" fontSize={11} />
+                  <YAxis stroke="#6b7280" fontSize={11} domain={[1, 20]} reversed ticks={[1, 5, 10, 15, 20]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#1f1f27", border: "1px solid #38383f", borderRadius: "8px", fontSize: "12px" }}
+                    labelFormatter={(value) => `Lap ${value}`}
+                  />
+                  {selectedDrivers.map((driverCode) => (
+                    <Line
+                      key={driverCode}
+                      type="monotone"
+                      dataKey={driverCode}
+                      stroke={getDriverColor(driverCode, session?.season)}
+                      strokeWidth={2}
+                      dot={false}
+                      name={driverCode}
+                      connectNulls
+                      isAnimationActive={false}
                     />
-                    <YAxis
-                      stroke="#9ca3af"
-                      fontSize={11}
-                      domain={[1, 20]}
-                      reversed
-                      ticks={[1, 5, 10, 15, 20]}
-                      label={{ value: "Position", angle: -90, position: "insideLeft" }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1f1f27",
-                        border: "1px solid #38383f",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      labelFormatter={(value) => `Lap ${value}`}
-                    />
-                    {selectedDrivers.map((driverCode) => (
-                      <Line
-                        key={driverCode}
-                        type="monotone"
-                        dataKey={driverCode}
-                        stroke={getDriverColor(driverCode, session?.season)}
-                        strokeWidth={2}
-                        dot={false}
-                        name={driverCode}
-                        connectNulls
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Driver selector */}
-              <div className="mt-4 flex flex-wrap gap-2">
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
               {raceData.drivers
                 .sort((a, b) => (a.final_position || 99) - (b.final_position || 99))
                 .map((driver) => {
@@ -462,130 +474,73 @@ export default function RacePage({ params }: { params: { id: string } }) {
                   return (
                     <button
                       key={driver.driver_id}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedDrivers(prev => prev.filter(d => d !== driver.driver_code));
-                        } else {
-                          setSelectedDrivers(prev => [...prev, driver.driver_code]);
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-all border ${
-                        isSelected
-                          ? "text-white shadow-lg"
-                          : "bg-f1-dark border-f1-gray/30 text-f1-light hover:border-f1-gray/50"
+                      onClick={() => toggleDriver(driver.driver_code)}
+                      className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-all border-2 ${
+                        isSelected ? "text-white shadow-lg" : "bg-f1-dark/50 border-f1-gray/30 text-gray-400 hover:border-f1-gray/50"
                       }`}
-                      style={isSelected ? { 
-                        backgroundColor: getDriverColor(driver.driver_code, session?.season), 
-                        borderColor: getDriverColor(driver.driver_code, session?.season) 
-                      } : {}}
+                      style={isSelected ? { backgroundColor: getDriverColor(driver.driver_code, session?.season), borderColor: getDriverColor(driver.driver_code, session?.season) } : {}}
                     >
                       {driver.driver_code} P{driver.final_position || "-"}
                     </button>
                   );
                 })}
-              </div>
             </div>
-          );
-        })()}
+          </div>
+        )}
 
         {/* Lap Times View */}
-        {activeView === "laptimes" && (() => {
-          // Get all unique lap numbers from all selected drivers
-          const allLapNumbers = new Set<number>();
-          raceData.drivers
-            .filter(d => selectedDrivers.includes(d.driver_code))
-            .forEach(driver => {
-              driver.laps.forEach(lap => {
-                if (lap.lap_time_ms && lap.lap_time_ms < 120000) {
-                  allLapNumbers.add(lap.lap_number);
-                }
-              });
-            });
-          
-          // Create chart data with all drivers' lap times
-          const lapTimeChartData = Array.from(allLapNumbers).sort((a, b) => a - b).map(lapNum => {
-            const dataPoint: any = { lap: lapNum };
-            
-            selectedDrivers.forEach(driverCode => {
-              const driver = raceData.drivers.find(d => d.driver_code === driverCode);
-              if (driver) {
-                const lap = driver.laps.find(l => l.lap_number === lapNum);
-                dataPoint[driverCode] = lap?.lap_time_ms && lap.lap_time_ms < 120000 ? lap.lap_time_ms : null;
-                dataPoint[`${driverCode}_pit`] = driver.pit_stops.some(p => p.lap_number === lapNum);
-              }
-            });
-            
-            return dataPoint;
-          });
-
-          return (
-            <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
-              <h3 className="text-sm font-semibold text-f1-light uppercase tracking-wider mb-4">
-                Lap Time Comparison
-              </h3>
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={lapTimeChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <XAxis
-                      dataKey="lap"
-                      stroke="#9ca3af"
-                      fontSize={11}
-                      label={{ value: "Lap", position: "insideBottom", offset: -5 }}
+        {activeView === "laptimes" && (
+          <div className="bg-f1-dark/50 rounded-xl border border-f1-gray/20 p-4">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+              Lap Time Comparison
+            </h3>
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lapTimeChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <XAxis dataKey="lap" stroke="#6b7280" fontSize={11} />
+                  <YAxis stroke="#6b7280" fontSize={11} tickFormatter={(value) => formatLapTime(value)} domain={['dataMin - 2000', 'dataMax + 2000']} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#1f1f27", border: "1px solid #38383f", borderRadius: "8px", fontSize: "12px" }}
+                    formatter={(value) => [formatLapTime(value as number | null), ""]}
+                    labelFormatter={(value) => `Lap ${value}`}
+                  />
+                  {selectedDrivers.map((driverCode) => (
+                    <Line
+                      key={driverCode}
+                      type="monotone"
+                      dataKey={driverCode}
+                      stroke={getDriverColor(driverCode, session?.season)}
+                      strokeWidth={2}
+                      dot={false}
+                      name={driverCode}
+                      connectNulls
+                      isAnimationActive={false}
                     />
-                    <YAxis
-                      stroke="#9ca3af"
-                      fontSize={11}
-                      tickFormatter={(value) => formatLapTime(value)}
-                      label={{ value: "Lap Time", angle: -90, position: "insideLeft" }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1f1f27",
-                        border: "1px solid #38383f",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(value: any) => formatLapTime(value)}
-                      labelFormatter={(value) => `Lap ${value}`}
-                    />
-                    {selectedDrivers.map((driverCode) => (
-                      <Line
-                        key={driverCode}
-                        type="monotone"
-                        dataKey={driverCode}
-                        stroke={getDriverColor(driverCode, session?.season)}
-                        strokeWidth={2}
-                        dot={(props: any) => {
-                          const { cx, cy, payload } = props;
-                          const isPitLap = payload[`${driverCode}_pit`];
-                          if (isPitLap) {
-                            return (
-                              <circle cx={cx} cy={cy} r={4} fill="#e10600" stroke="#fff" strokeWidth={1} />
-                            );
-                          }
-                          return null;
-                        }}
-                        name={driverCode}
-                        connectNulls
-                      />
-                    ))}
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             </div>
-              {/* Info */}
-              <div className="mt-4 flex items-center gap-4 text-xs text-f1-light">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-1 bg-f1-red" />
-                  <span>Lap Time</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-f1-red border-2 border-white" />
-                  <span>Pit Stop Lap</span>
-                </div>
-              </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {raceData.drivers
+                .sort((a, b) => (a.final_position || 99) - (b.final_position || 99))
+                .map((driver) => {
+                  const isSelected = selectedDrivers.includes(driver.driver_code);
+                  return (
+                    <button
+                      key={driver.driver_id}
+                      onClick={() => toggleDriver(driver.driver_code)}
+                      className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-all border-2 ${
+                        isSelected ? "text-white shadow-lg" : "bg-f1-dark/50 border-f1-gray/30 text-gray-400 hover:border-f1-gray/50"
+                      }`}
+                      style={isSelected ? { backgroundColor: getDriverColor(driver.driver_code, session?.season), borderColor: getDriverColor(driver.driver_code, session?.season) } : {}}
+                    >
+                      {driver.driver_code} P{driver.final_position || "-"}
+                    </button>
+                  );
+                })}
             </div>
-          );
-        })()}
+          </div>
+        )}
       </div>
     </div>
   );

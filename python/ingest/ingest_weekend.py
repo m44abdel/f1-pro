@@ -4,10 +4,32 @@ import numpy as np
 import pandas as pd
 import fastf1
 from fastf1.core import Session
+import socket
+import time
 
 from common.db import get_conn
 
-fastf1.Cache.enable_cache(os.path.join(os.getcwd(), ".fastf1_cache"))
+# Set cache directory explicitly to avoid permission issues
+cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".fastf1_cache")
+os.makedirs(cache_dir, exist_ok=True)
+fastf1.Cache.enable_cache(cache_dir)
+
+def test_network_connectivity():
+    """Test if we can resolve common DNS names"""
+    test_hosts = [
+        ("google.com", "Google DNS"),
+        ("api.formula1.com", "F1 API"),
+        ("livetiming.formula1.com", "F1 Live Timing"),
+    ]
+    
+    for host, name in test_hosts:
+        try:
+            socket.gethostbyname(host)
+            print(f"✓ DNS resolution OK for {name} ({host})")
+        except socket.gaierror as e:
+            print(f"✗ DNS resolution failed for {name} ({host}): {e}")
+            return False
+    return True
 
 def ms_from_timedelta(x) -> int | None:
   if pd.isna(x) or x is None:
@@ -89,7 +111,31 @@ def upsert_driver(cur, code: str, name: str) -> int:
 
 def ingest_session(season: int, rnd: int, session_code: str, telemetry_points: int = 1200):
   # session_code like "R", "Q", "FP1"
-  s: Session = fastf1.get_session(season, rnd, session_code)
+  
+  # Test network connectivity first
+  print("Testing network connectivity...")
+  if not test_network_connectivity():
+    # Don't hard fail here—FastF1 may still succeed with cached hosts.
+    print("Warning: DNS preflight check failed, continuing to try ingestion...")
+  
+  # Try to get session with retry
+  max_retries = 3
+  retry_delay = 5
+  
+  for attempt in range(max_retries):
+    try:
+      print(f"Getting session data (attempt {attempt + 1}/{max_retries})...")
+      s: Session = fastf1.get_session(season, rnd, session_code)
+      break
+    except Exception as e:
+      print(f"Error getting session: {e}")
+      if "ENOTFOUND" in str(e) or "getaddrinfo" in str(e) or "Name or service not known" in str(e):
+        if attempt < max_retries - 1:
+          print(f"Retrying in {retry_delay} seconds...")
+          time.sleep(retry_delay)
+          continue
+        raise Exception("Network lookup failed (ENOTFOUND). Check your connection/VPN and try again.")
+      raise
   
   # Get job_id from environment for progress tracking
   job_id = int(os.environ.get("JOB_ID", 0))
@@ -98,7 +144,21 @@ def ingest_session(season: int, rnd: int, session_code: str, telemetry_points: i
     progress = {session_code: 20}
     update_job_progress(job_id, progress)
   
-  s.load(telemetry=True, laps=True, weather=False, messages=False)
+  # Try to load session data with retry
+  for attempt in range(max_retries):
+    try:
+      print(f"Loading session data (attempt {attempt + 1}/{max_retries})...")
+      s.load(telemetry=True, laps=True, weather=False, messages=False)
+      break
+    except Exception as e:
+      print(f"Error loading session data: {e}")
+      if "ENOTFOUND" in str(e) or "getaddrinfo" in str(e) or "Name or service not known" in str(e):
+        if attempt < max_retries - 1:
+          print(f"Retrying in {retry_delay} seconds...")
+          time.sleep(retry_delay)
+          continue
+        raise Exception("Network lookup failed (ENOTFOUND). Check your connection/VPN and try again.")
+      raise
   
   if job_id:
     progress[session_code] = 40

@@ -6,6 +6,7 @@ import { AdminLogin } from "@/components/AdminLogin";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { AnimatedCard, AnimatedList, AnimatedListItem } from "@/components/AnimatedCard";
+import { SiteBrand } from "@/components/SiteBrand";
 
 interface Weekend {
   id: number;
@@ -60,6 +61,14 @@ const SESSION_COLORS: Record<string, string> = {
   R: "bg-f1-red",
 };
 
+type IngestResponse = {
+  success: boolean;
+  message?: string;
+  jobId?: number;
+  sessions?: string[];
+  error?: string;
+};
+
 function formatLapTime(ms: number | null): string {
   if (!ms) return "-";
   const minutes = Math.floor(ms / 60000);
@@ -72,6 +81,23 @@ function formatDelta(ms: number | null, leaderMs: number | null): string {
   if (ms === leaderMs) return "";
   const delta = (ms - leaderMs) / 1000;
   return `+${delta.toFixed(3)}`;
+}
+
+async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  const contentType = res.headers.get("content-type") || "";
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+
+  const text = await res.text();
+  throw new Error(text || "Invalid JSON response");
 }
 
 export default function Home() {
@@ -93,8 +119,7 @@ export default function Home() {
 
   // Fetch seasons on mount
   useEffect(() => {
-    fetch("/api/seasons")
-      .then((res) => res.json())
+    fetchJson<{ success: boolean; data: number[] }>("/api/seasons")
       .then((data) => {
         if (data.success) {
           setSeasons(data.data);
@@ -115,8 +140,7 @@ export default function Home() {
     if (!selectedSeason) return;
     
     setLoading(true);
-    fetch(`/api/weekends?season=${selectedSeason}`)
-      .then((res) => res.json())
+    fetchJson<{ success: boolean; data: Weekend[] }>(`/api/weekends?season=${selectedSeason}`)
       .then((data) => {
         if (data.success) {
           setWeekends(data.data);
@@ -140,8 +164,7 @@ export default function Home() {
     }
     
     setLoading(true);
-    fetch(`/api/session/${selectedSessionId}`)
-      .then((res) => res.json())
+    fetchJson<{ success: boolean; data: SessionData }>(`/api/session/${selectedSessionId}`)
       .then((data) => {
         if (data.success) {
           setSessionData(data.data);
@@ -164,8 +187,7 @@ export default function Home() {
     
     // Check which sessions are available for this weekend
     if (selectedWeekend && selectedSeason) {
-      fetch(`/api/weekend-sessions?season=${selectedSeason}&round=${selectedWeekend.round}`)
-        .then(res => res.json())
+      fetchJson<{ success: boolean; sessions: string[] }>(`/api/weekend-sessions?season=${selectedSeason}&round=${selectedWeekend.round}`)
         .then(data => {
           if (data.success) {
             setAvailableSessions(data.sessions);
@@ -212,7 +234,7 @@ export default function Home() {
         headers["Authorization"] = `Bearer ${adminToken}`;
       }
       
-      const response = await fetch("/api/ingest", {
+      const data = await fetchJson<IngestResponse>("/api/ingest", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -221,8 +243,6 @@ export default function Home() {
           sessions: sessionsToLoad
         })
       });
-      
-      const data = await response.json();
       
       if (data.success) {
         if (data.message === "All requested sessions already exist") {
@@ -234,20 +254,20 @@ export default function Home() {
             window.location.reload();
           }, 1000);
         } else {
-          setIngestJobId(data.jobId);
-          setIngestStatus(`Preparing to load ${data.sessions.length} sessions...`);
+          setIngestJobId(data.jobId ?? null);
+          const sessionCount = data.sessions ? data.sessions.length : 0;
+          setIngestStatus(`Preparing to load ${sessionCount} sessions...`);
           
           // Initialize progress for each session
           const initialProgress: Record<string, number> = {};
-          data.sessions.forEach((session: string) => {
+          (data.sessions || []).forEach((session: string) => {
             initialProgress[session] = 0;
           });
           setSessionProgress(initialProgress);
           
           // Poll for job status and progress
           const pollInterval = setInterval(async () => {
-            const statusRes = await fetch(`/api/ingest?jobId=${data.jobId}`);
-            const statusData = await statusRes.json();
+            const statusData = await fetchJson<{ success: boolean; job?: any; error?: string }>(`/api/ingest?jobId=${data.jobId}`);
             
             if (statusData.success && statusData.job) {
               const job = statusData.job;
@@ -255,7 +275,7 @@ export default function Home() {
               if (job.status === "SUCCESS") {
                 // Set all sessions to 100%
                 const completedProgress: Record<string, number> = {};
-                data.sessions.forEach((session: string) => {
+                (data.sessions || []).forEach((session: string) => {
                   completedProgress[session] = 100;
                 });
                 setSessionProgress(completedProgress);
@@ -288,12 +308,12 @@ export default function Home() {
                   // Simulate progress
                   const elapsed = Date.now() - new Date(job.started_at).getTime();
                   const estimatedTimePerSession = 90000; // 90 seconds per session
-                  const totalSessions = data.sessions.length;
+                  const totalSessions = data.sessions?.length || 0;
                   const overallProgress = Math.min((elapsed / (estimatedTimePerSession * totalSessions)) * 100, 95);
                   
                   // Update individual session progress
                   const updatedProgress: Record<string, number> = {};
-                  data.sessions.forEach((session: string, index: number) => {
+                  (data.sessions || []).forEach((session: string, index: number) => {
                     const sessionStartProgress = (index / totalSessions) * 100;
                     const sessionEndProgress = ((index + 1) / totalSessions) * 100;
                     const sessionProgress = Math.max(0, Math.min(100, 
@@ -311,14 +331,23 @@ export default function Home() {
           setTimeout(() => clearInterval(pollInterval), 600000);
         }
       } else {
-        setIngestStatus(`Error: ${data.error}`);
+        const message = data.error || "Request failed";
+        console.error("Ingest error:", message, data);
+        const friendly = message.toLowerCase().includes("enotfound")
+          ? "Network lookup failed (ENOTFOUND). Check your connection/VPN and try again."
+          : message;
+        setIngestStatus(`Error: ${friendly}`);
         setTimeout(() => {
           setIngesting(false);
           setIngestStatus(null);
         }, 3000);
       }
     } catch (error) {
-      setIngestStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const friendly = message.toLowerCase().includes("enotfound")
+        ? "Network lookup failed (ENOTFOUND). Check your connection/VPN and try again."
+        : message;
+      setIngestStatus(`Error: ${friendly}`);
       setTimeout(() => {
         setIngesting(false);
         setIngestStatus(null);
@@ -337,19 +366,8 @@ export default function Home() {
       >
         <div className="absolute inset-0 bg-gradient-to-r from-f1-red/10 to-transparent pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between relative">
-          <motion.div 
-            className="flex items-center gap-3"
-            whileHover={{ scale: 1.05 }}
-            transition={{ type: "spring", stiffness: 400 }}
-          >
-            <motion.div 
-              className="w-1 h-8 bg-f1-red rounded-full"
-              animate={{ height: [32, 40, 32] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            />
-            <h1 className="text-2xl font-bold tracking-tight">
-              F1<span className="text-f1-red">Pro</span>
-            </h1>
+          <motion.div whileHover={{ scale: 1.02 }} transition={{ type: "spring", stiffness: 400 }}>
+            <SiteBrand subtitle="Grand Prix Library" />
           </motion.div>
           
           <div className="flex items-center gap-4">
@@ -390,9 +408,9 @@ export default function Home() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <div className="glass rounded-xl overflow-hidden hover-lift">
-              <div className="px-4 py-3 border-b border-f1-gray/20 bg-gradient-to-r from-f1-red/20 to-transparent">
-                <h2 className="text-sm font-semibold text-f1-light uppercase tracking-wider">
+            <div className="bg-f1-dark/90 rounded-xl overflow-hidden border border-f1-gray/30 shadow-xl">
+              <div className="px-4 py-3 border-b border-f1-gray/30 bg-gradient-to-r from-f1-red/30 to-f1-dark/50">
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                   Grand Prix
                 </h2>
               </div>
@@ -402,24 +420,25 @@ export default function Home() {
                     <AnimatedListItem key={w.id}>
                       <motion.button
                         onClick={() => setSelectedWeekend(w)}
-                        className={`w-full text-left px-4 py-3 border-b border-f1-gray/10 transition-all ${
+                        className={`w-full text-left px-4 py-3 border-b border-f1-gray/20 transition-all ${
                           selectedWeekend?.id === w.id
-                            ? "bg-gradient-to-r from-f1-red/20 to-transparent border-l-2 border-l-f1-red"
-                            : "hover:bg-f1-gray/20"
+                            ? "bg-gradient-to-r from-f1-red/30 to-transparent border-l-4 border-l-f1-red"
+                            : "hover:bg-f1-gray/30 bg-f1-dark/50"
                         }`}
                         whileHover={{ x: 5 }}
                         whileTap={{ scale: 0.98 }}
                       >
                         <div className="flex items-center gap-3">
-                          <motion.span 
-                            className="text-f1-light text-xs font-mono w-6"
-                            animate={selectedWeekend?.id === w.id ? { color: "#e10600" } : {}}
+                          <span 
+                            className={`text-xs font-mono w-8 font-bold ${
+                              selectedWeekend?.id === w.id ? "text-f1-red" : "text-gray-400"
+                            }`}
                           >
                             R{w.round}
-                          </motion.span>
+                          </span>
                           <div>
-                            <p className="font-semibold text-sm">{w.name}</p>
-                            <p className="text-xs text-f1-light">{w.circuit}</p>
+                            <p className="font-semibold text-sm text-white">{w.name}</p>
+                            <p className="text-xs text-gray-400">{w.circuit}</p>
                           </div>
                         </div>
                       </motion.button>

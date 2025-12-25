@@ -25,36 +25,16 @@ export function AnimatedCard({ children, className = '', delay = 0, hover = true
 
 export function AnimatedList({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <motion.div
-      className={className}
-      initial="hidden"
-      animate="visible"
-      variants={{
-        hidden: { opacity: 0 },
-        visible: {
-          opacity: 1,
-          transition: {
-            staggerChildren: 0.1,
-          },
-        },
-      }}
-    >
+    <div className={className}>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
 export function AnimatedListItem({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <motion.div
-      className={className}
-      variants={{
-        hidden: { opacity: 0, x: -20 },
-        visible: { opacity: 1, x: 0 },
-      }}
-      transition={{ duration: 0.3 }}
-    >
+    <div className={className}>
       {children}
-    </motion.div>
+    </div>
   );
 }

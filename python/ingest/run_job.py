@@ -5,6 +5,13 @@ import traceback
 # Add parent directory to path to import from common
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Set up FastF1 cache before importing anything that uses it
+import fastf1
+cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".fastf1_cache")
+os.makedirs(cache_dir, exist_ok=True)
+fastf1.Cache.enable_cache(cache_dir)
+print(f"FastF1 cache directory: {cache_dir}")
+
 from common.db import set_job_status
 from common.progress import update_job_progress
 from ingest.ingest_weekend import ingest_session

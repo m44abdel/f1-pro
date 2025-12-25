@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+RESUME_PROJECT.md
 .env*.local
 node_modules/
 .next/

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-labelledby="title">
+  <title id="title">F1 Pro Logo</title>
+  <g fill="none" fill-rule="evenodd">
+    <path fill="#E10600" d="M20 50h152v20H58v12h96v20H20z"/>
+    <path fill="#FFFFFF" d="M190 50h32v30l48-30h38l-56 38 56 40h-40l-46-34v34h-32z"/>
+    <path fill="#E10600" d="M52 122h46l18-14h72l14 12h44c10 0 18 8 18 18v10H52c-10 0-18-8-18-18s8-18 18-18Z"/>
+    <path fill="#0D0D0F" d="M110 152c-10.5 0-19-8.5-19-19s8.5-19 19-19 19 8.5 19 19-8.5 19-19 19Zm124 0c-10.5 0-19-8.5-19-19s8.5-19 19-19 19 8.5 19 19-8.5 19-19 19Z"/>
+    <path fill="#FFFFFF" d="M110 143c-5.5 0-10-4.5-10-10s4.5-10 10-10 10 4.5 10 10-4.5 10-10 10Zm124 0c-5.5 0-10-4.5-10-10s4.5-10 10-10 10 4.5 10 10-4.5 10-10 10Z"/>
+    <path fill="#FFFFFF" d="M150 101h18c5.5 0 8.8 3.2 8.8 7.8 0 4.6-3.3 7.8-8.8 7.8H150v-15.6Z"/>
+    <path fill="#E10600" d="M258 116h38c7 0 12.7 5.7 12.7 12.7V142h-34.4c-5.7 0-10.6-3.8-12-9.3l-4.3-16.7Z" opacity=".9"/>
+    <text x="45" y="182" font-family="Titillium Web, 'Segoe UI', sans-serif" font-size="50" font-weight="800" letter-spacing="4" fill="#FFFFFF">PRO</text>
+  </g>
+</svg>

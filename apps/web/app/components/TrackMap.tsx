@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 
 interface TrackMapProps {
   posX: number[];
@@ -36,14 +36,34 @@ function getSpeedColor(speed: number, minSpeed: number, maxSpeed: number): strin
 
 function getThrottleColor(throttle: number): string {
   // Green intensity based on throttle
-  const intensity = Math.round((throttle / 100) * 200);
+  // Handle both 0-1 and 0-100 scales
+  let normalizedThrottle = throttle;
+  if (throttle <= 1) {
+    normalizedThrottle = throttle * 100;
+  }
+  const intensity = Math.round((normalizedThrottle / 100) * 200);
   return `rgb(0, ${intensity + 55}, 0)`;
 }
 
 function getBrakeColor(brake: number): string {
-  // Red intensity based on brake
-  const intensity = Math.round((brake / 100) * 200);
-  return `rgb(${intensity + 55}, 0, 0)`;
+  // Red intensity based on brake pressure
+  // Brake values might be 0-1 instead of 0-100, so let's check
+  if (brake <= 0 || brake === undefined || brake === null) {
+    // No brake - dark gray
+    return `rgb(60, 60, 60)`;
+  }
+  
+  // If brake values are between 0 and 1, scale them up
+  let normalizedBrake = brake;
+  if (brake <= 1) {
+    normalizedBrake = brake * 100;
+  }
+  
+  // Even 1% brake should show red
+  // Scale from dark red to bright red based on brake pressure
+  const normalized = Math.min(normalizedBrake / 100, 1); // Ensure it's between 0 and 1
+  const intensity = Math.round(normalized * 195) + 60; // Range from 60 to 255
+  return `rgb(${intensity}, 0, 0)`;
 }
 
 export default function TrackMap({
@@ -58,10 +78,15 @@ export default function TrackMap({
   width = 400,
   height = 400,
 }: TrackMapProps) {
+  
+  // Stable hover handler to prevent flickering
+  const handleHover = useCallback((index: number | null) => {
+    onHover(index);
+  }, [onHover]);
   // Calculate bounds and transform
-  const { points, viewBox, minSpeed, maxSpeed } = useMemo(() => {
+  const { points, viewBox, minSpeed, maxSpeed, minBrake, maxBrake } = useMemo(() => {
     if (!posX || !posY || posX.length === 0) {
-      return { points: [], viewBox: "0 0 400 400", minSpeed: 0, maxSpeed: 350 };
+      return { points: [], viewBox: "0 0 400 400", minSpeed: 0, maxSpeed: 350, minBrake: 0, maxBrake: 100 };
     }
 
     const minX = Math.min(...posX);
@@ -93,12 +118,19 @@ export default function TrackMap({
 
     const minSpd = Math.min(...speed);
     const maxSpd = Math.max(...speed);
+    
+    // Calculate brake value range
+    const brakeValues = brake || [];
+    const minBrk = brakeValues.length > 0 ? Math.min(...brakeValues) : 0;
+    const maxBrk = brakeValues.length > 0 ? Math.max(...brakeValues) : 100;
 
     return {
       points: pts,
       viewBox: `0 0 ${width} ${height}`,
       minSpeed: minSpd,
       maxSpeed: maxSpd,
+      minBrake: minBrk,
+      maxBrake: maxBrk,
     };
   }, [posX, posY, speed, throttle, brake, width, height]);
 
@@ -123,7 +155,9 @@ export default function TrackMap({
     } else if (colorMode === "throttle") {
       color = getThrottleColor(pt.throttle);
     } else {
-      color = getBrakeColor(pt.brake);
+      // For brake, use the actual brake value at this point
+      const brakeValue = pt.brake || 0;
+      color = getBrakeColor(brakeValue);
     }
 
     return {
@@ -137,12 +171,12 @@ export default function TrackMap({
   });
 
   return (
-    <div className="relative">
+    <div className="relative overflow-hidden rounded-xl">
       <svg
         width={width}
         height={height}
         viewBox={viewBox}
-        className="bg-f1-dark/30 rounded-xl border border-f1-gray/20"
+        className="bg-f1-dark/30 border border-f1-gray/20"
       >
         {/* Track outline (shadow) */}
         <g opacity={0.3}>
@@ -171,24 +205,55 @@ export default function TrackMap({
             stroke={seg.color}
             strokeWidth={6}
             strokeLinecap="round"
-            className="cursor-pointer transition-opacity"
+            className="transition-opacity"
             opacity={hoveredIndex !== null && Math.abs(hoveredIndex - seg.index) > 5 ? 0.4 : 1}
-            onMouseEnter={() => onHover(seg.index)}
-            onMouseLeave={() => onHover(null)}
+          />
+        ))}
+        
+        {/* Invisible hover areas - wider for better interaction */}
+        {segments.map((seg, i) => (
+          <line
+            key={`hover-${i}`}
+            x1={seg.x1}
+            y1={seg.y1}
+            x2={seg.x2}
+            y2={seg.y2}
+            stroke="transparent"
+            strokeWidth={20}
+            strokeLinecap="round"
+            className="cursor-pointer"
+            onMouseEnter={() => handleHover(seg.index)}
+            onMouseLeave={() => handleHover(null)}
           />
         ))}
 
         {/* Hover indicator */}
         {hoveredIndex !== null && points[hoveredIndex] && (
-          <>
-            {/* Glow effect */}
+          <g style={{ pointerEvents: 'none' }}>
+            {/* Large visible circle for testing */}
             <circle
               cx={points[hoveredIndex].x}
               cy={points[hoveredIndex].y}
-              r={12}
+              r={20}
+              fill="#e10600"
+              opacity={0.8}
+            />
+            {/* Outer glow */}
+            <circle
+              cx={points[hoveredIndex].x}
+              cy={points[hoveredIndex].y}
+              r={16}
               fill="none"
               stroke="#e10600"
               strokeWidth={2}
+              opacity={0.3}
+            />
+            {/* Inner glow */}
+            <circle
+              cx={points[hoveredIndex].x}
+              cy={points[hoveredIndex].y}
+              r={10}
+              fill="#e10600"
               opacity={0.5}
             />
             {/* Main dot */}
@@ -200,7 +265,7 @@ export default function TrackMap({
               stroke="#fff"
               strokeWidth={2}
             />
-          </>
+          </g>
         )}
 
         {/* Start/Finish line indicator */}
@@ -228,12 +293,12 @@ export default function TrackMap({
       </svg>
 
       {/* Speed legend */}
-      <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2 text-xs">
+      <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 text-xs">
         <span className="text-f1-light">
           {colorMode === "speed" ? `${Math.round(minSpeed)}` : "0%"}
         </span>
         <div 
-          className="flex-1 h-2 rounded-full"
+          className="flex-1 h-2 rounded-full overflow-hidden"
           style={{
             background: colorMode === "speed" 
               ? "linear-gradient(to right, rgb(0, 100, 255), rgb(0, 255, 200), rgb(255, 255, 0), rgb(255, 155, 0), rgb(255, 0, 0))"
@@ -249,15 +314,26 @@ export default function TrackMap({
 
       {/* Hover info */}
       {hoveredIndex !== null && points[hoveredIndex] && (
-        <div className="absolute top-2 left-2 bg-f1-dark/90 border border-f1-gray/30 rounded-lg px-3 py-2 text-xs">
-          <div className="font-semibold text-f1-white">
+        <div 
+          className="absolute top-2 left-2 bg-f1-dark/95 border border-f1-gray/30 rounded-lg px-3 py-2 text-xs shadow-lg"
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="font-semibold text-f1-white mb-1">
             {Math.round(points[hoveredIndex].speed)} km/h
           </div>
-          <div className="text-f1-light">
-            Throttle: {Math.round(points[hoveredIndex].throttle)}%
-          </div>
-          <div className="text-f1-light">
-            Brake: {Math.round(points[hoveredIndex].brake)}%
+          <div className="text-f1-light space-y-0.5">
+            <div>Throttle: {
+              // If throttle values are 0-1, convert to percentage
+              points[hoveredIndex].throttle <= 1 
+                ? Math.round(points[hoveredIndex].throttle * 100) 
+                : Math.round(points[hoveredIndex].throttle)
+            }%</div>
+            <div>Brake: {
+              // If brake values are 0-1, convert to percentage
+              points[hoveredIndex].brake <= 1 
+                ? Math.round(points[hoveredIndex].brake * 100) 
+                : Math.round(points[hoveredIndex].brake)
+            }%</div>
           </div>
         </div>
       )}

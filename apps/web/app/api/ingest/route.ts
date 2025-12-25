@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import path from "path";
 import { requireAuth } from "@/lib/auth";
 import { cookies } from "next/headers";
@@ -30,6 +30,62 @@ function getDatabaseUrl(): string {
   return process.env.DATABASE_URL || '';
 }
 
+// Find repository root by walking up until we see python/ or f1_venv/
+function findProjectRoot(): string {
+  let currentDir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    if (
+      fs.existsSync(path.join(currentDir, "python")) ||
+      fs.existsSync(path.join(currentDir, "f1_venv"))
+    ) {
+      return currentDir;
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+  return process.cwd();
+}
+
+// Resolve a working Python executable, preferring the repo virtualenv
+function resolvePythonExecutable(projectRoot: string): string {
+  const isWindows = process.platform === "win32";
+
+  const envPython = process.env.PYTHON_EXECUTABLE;
+  if (envPython) {
+    const envPath = path.isAbsolute(envPython)
+      ? envPython
+      : path.resolve(projectRoot, envPython);
+    if (fs.existsSync(envPath)) {
+      return envPath;
+    }
+  }
+
+  const venvPython = path.join(
+    projectRoot,
+    "f1_venv",
+    isWindows ? "Scripts" : "bin",
+    isWindows ? "python.exe" : "python"
+  );
+  if (fs.existsSync(venvPython)) {
+    return venvPython;
+  }
+
+  const systemCandidate = isWindows ? "python" : "python3";
+  try {
+    const probe = spawnSync(systemCandidate, ["--version"], { stdio: "pipe" });
+    if (!probe.error) {
+      return systemCandidate;
+    }
+  } catch (e) {
+    // ignore and fall through to error below
+  }
+
+  throw new Error(
+    'Could not find a Python executable. Create the virtualenv with "python -m venv f1_venv" (then install deps) or set PYTHON_EXECUTABLE to a valid interpreter.'
+  );
+}
+
 export async function POST(request: NextRequest) {
   // Check authentication - either admin session cookie or API token
   const cookieStore = await cookies();
@@ -42,6 +98,8 @@ export async function POST(request: NextRequest) {
     if (authError) return authError;
   }
   
+  let jobId: number | null = null;
+
   try {
     const { season, round, sessions } = await request.json();
     
@@ -82,25 +140,33 @@ export async function POST(request: NextRequest) {
       [season, round, newSessions.join(",")]
     );
     
-    const jobId = jobResult.rows[0].id;
+    jobId = jobResult.rows[0].id;
+
+    if (!jobId) {
+      throw new Error("Failed to create ingest job id");
+    }
 
     // Spawn Python process to ingest data
-    // Use absolute paths for reliability
-    const projectRoot = "/Users/mohebabdelmasih/Desktop/f1-pro";
+    const projectRoot = findProjectRoot();
     const pythonPath = path.join(projectRoot, "python");
-    const venvPython = path.join(projectRoot, "f1_venv", "bin", "python");
+    const pythonExecutable = resolvePythonExecutable(projectRoot);
+    const ingestScript = path.join(pythonPath, "ingest", "run_job.py");
     
     // Get the database URL
     const databaseUrl = getDatabaseUrl();
     console.log('DATABASE_URL available:', !!databaseUrl && databaseUrl.length > 20);
+    console.log('Python executable resolved to:', pythonExecutable);
+    console.log('Ingest script path:', ingestScript);
     
     if (!databaseUrl || databaseUrl.length < 20) {
       throw new Error('DATABASE_URL is not properly configured');
     }
     
-    const ingestProcess = spawn(venvPython, [
-      path.join(pythonPath, "ingest", "run_job.py")
-    ], {
+    if (!fs.existsSync(ingestScript)) {
+      throw new Error(`Ingest script not found at ${ingestScript}`);
+    }
+
+    const ingestProcess = spawn(pythonExecutable, [ingestScript], {
       cwd: pythonPath,
       env: {
         ...process.env,
@@ -179,7 +245,25 @@ export async function POST(request: NextRequest) {
     console.error("Ingestion API error:", error);
     console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
     console.error("DATABASE_URL exists:", !!process.env.DATABASE_URL);
-    console.error("Python path exists:", require('fs').existsSync("/Users/mohebabdelmasih/Desktop/f1-pro/f1_venv/bin/python"));
+    try {
+      const projectRoot = findProjectRoot();
+      const pythonCandidate = resolvePythonExecutable(projectRoot);
+      console.error("Resolved Python candidate:", pythonCandidate);
+    } catch (resolveError) {
+      console.error("Could not resolve Python executable:", resolveError);
+    }
+    try {
+      // If a job was created, mark it failed so it does not stay pending
+      if (typeof jobId === "number") {
+        const pool = getPool();
+        await pool.query(
+          "UPDATE ingest_jobs SET status = 'FAILED', error = $1 WHERE id = $2",
+          [errorMessage, jobId]
+        );
+      }
+    } catch (e) {
+      console.error("Failed to update ingest job status after error:", e);
+    }
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 }
